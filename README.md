@@ -1,6 +1,6 @@
 # Agente de Alertas de Precio
 
-Proyecto académico — Asignatura: Tendencias Tecnológicas  
+Proyecto académico — Asignatura: Redes de Datos
 Institución: Tecnológico de Antioquia  
 Versión: 1.0 — MVP | Mayo 2026
 

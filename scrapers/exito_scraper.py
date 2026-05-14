@@ -98,59 +98,40 @@ class ExitoScraper(BaseScraper):
             return None
         url_producto = href if href.startswith("http") else f"{self.BASE_URL}{href}"
 
-        textos = []
-        tiene_agregar = False
-        tiene_modal = False
-        nodo = link_nombre.next_sibling
-        limite = 40
+        padre = link_nombre.parent
 
-        while nodo and limite > 0:
-            limite -= 1
-            if hasattr(nodo, 'name') and nodo.name:
-                if nodo.name == "a" and nodo.find("h3"):
-                    break
-                if nodo.name == "button":
-                    texto_btn = nodo.get_text(strip=True)
-                    if "lista de deseos" in texto_btn.lower():
-                        break
-                    if texto_btn.lower() == "agregar":
-                        tiene_agregar = True
-                        textos.append("__AGREGAR__")
-                        nodo = nodo.next_sibling
-                        continue
-                    if texto_btn == "Modal opener":
-                        tiene_modal = True
-                        textos.append("__MODAL__")
-                        nodo = nodo.next_sibling
-                        continue
-                t = nodo.get_text(strip=True)
-                if t:
-                    textos.append(t)
-            elif isinstance(nodo, str):
-                t = nodo.strip()
-                if t:
-                    textos.append(t)
-            nodo = nodo.next_sibling
-
-        RE_NUMERO = re.compile(r'^\d{1,3}(\.\d{3})*$')
-        numeros = [t for t in textos if RE_NUMERO.match(t)]
-
-        if tiene_modal and len(numeros) >= 2:
-            precio_base = self._limpiar_precio(numeros[0])
-            precio_efectivo = self._limpiar_precio(numeros[1])
-        elif numeros:
-            precio_base = self._limpiar_precio(numeros[0])
-            precio_efectivo = precio_base
-        else:
-            precio_base = 0.0
-            precio_efectivo = 0.0
-
-        texto_bloque = " ".join(textos)
-        disponible = tiene_agregar and self.esta_disponible(texto_bloque)
-
+        precio_base = 0.0
+        precio_efectivo = 0.0
         medio_pago = ""
+
+        precio_base_tag = padre.find("p", attrs={"data-fs-price": True})
+        if precio_base_tag:
+            precio_base = self._limpiar_precio(precio_base_tag.get_text(strip=True))
+
+        precio_efectivo_tag = padre.find("p", attrs={"data-fs-container-price-otros": True})
+        if precio_efectivo_tag:
+            precio_efectivo = self._limpiar_precio(precio_efectivo_tag.get_text(strip=True))
+
+        if precio_efectivo and not precio_base:
+            precio_base = precio_efectivo
+        elif precio_base and not precio_efectivo:
+            precio_efectivo = precio_base
+
+        abuelo = padre.parent
+        disponible = False
+        if abuelo:
+            for btn in abuelo.find_all("button"):
+                if btn.get_text(strip=True).lower() == "agregar":
+                    disponible = True
+                    break
+
+        if not disponible and precio_efectivo > 0:
+            texto_completo = abuelo.get_text(" ", strip=True) if abuelo else ""
+            disponible = self.esta_disponible(texto_completo)
+
+        texto_padre = padre.get_text(" ", strip=True).lower()
         for keyword in ["tarjeta éxito", "tarjeta exito", "nequi", "daviplata", "pse"]:
-            if keyword in texto_bloque.lower():
+            if keyword in texto_padre:
                 medio_pago = keyword.title()
                 break
 

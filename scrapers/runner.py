@@ -4,9 +4,17 @@ y guarda los ResultadoEncontrado en la base de datos.
 """
 
 import logging
+import unicodedata
 from scrapers import ExitoScraper, OlimpicaScraper, CarullaScraper
 from pricing.models import ConsultaPrecio, ResultadoEncontrado
 
+def normalizar(texto: str) -> str:
+    """Convierte a minúsculas y elimina tildes para comparación."""
+    return ''.join(
+        c for c in unicodedata.normalize('NFD', texto.lower())
+        if unicodedata.category(c) != 'Mn'
+    )
+    
 logger = logging.getLogger(__name__)
 
 SCRAPERS_DISPONIBLES = {
@@ -33,7 +41,7 @@ def ejecutar_scraping_producto(producto) -> None:
     tiendas = Tienda.objects.all()
 
     for tienda in tiendas:
-        nombre_tienda = tienda.nombre.lower()
+        nombre_tienda = normalizar(tienda.nombre)
         scraper_clase = SCRAPERS_DISPONIBLES.get(nombre_tienda)
 
         if scraper_clase is None:
@@ -47,7 +55,7 @@ def ejecutar_scraping_producto(producto) -> None:
         )
 
         try:
-            scraper = scraper_clase(url_base=tienda.url_base)
+            scraper = scraper_clase()
             resultados = scraper.buscar_producto(palabras_clave)
 
             for r in resultados:

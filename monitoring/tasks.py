@@ -3,6 +3,8 @@ from celery import shared_task
 from decouple import config
 
 from products.models import Producto
+from pricing.models import ResultadoEncontrado
+from pricing.comparator import Comparador
 from scrapers.runner import ejecutar_scraping_producto
 from monitoring.price_comparator import evaluar_producto
 from monitoring.models import EstadoMonitoreo
@@ -11,6 +13,7 @@ from notifications.brevo_sender import enviar_correo
 from notifications.models import NotificacionCorreo
 
 logger = logging.getLogger(__name__)
+comparador = Comparador()
 
 
 @shared_task(name="monitoring.tasks.ciclo_monitoreo")
@@ -38,20 +41,36 @@ def ciclo_monitoreo():
             )
             continue
 
-        # Paso 2 — Comparación
-        resultado = evaluar_producto(producto)
+        # Paso 2 — Decisión de mejor precio
+        try:
+            resultados = ResultadoEncontrado.objects.filter(
+                consulta__producto=producto,
+                disponible=True,
+            ).select_related("consulta__tienda")
 
-        if resultado["error"]:
+            decision = comparador.comparar(producto, list(resultados))
+
+            if decision is None:
+                EstadoMonitoreo.objects.create(
+                    decision=None,
+                    estado=EstadoMonitoreo.ESTADO_ERROR,
+                    detalle="Sin resultados disponibles para tomar decisión.",
+                )
+                continue
+
+        except Exception as exc:
+            logger.error("Error en comparación de '%s': %s", producto.nombre, exc)
             EstadoMonitoreo.objects.create(
                 decision=None,
                 estado=EstadoMonitoreo.ESTADO_ERROR,
-                detalle=resultado["error"],
+                detalle=f"Error en comparación: {exc}",
             )
             continue
 
-        decision = resultado["decision"]
+        # Paso 3 — Evaluación de cambio
+        resultado = evaluar_producto(producto)
 
-        # Paso 3 — Notificación si hubo cambio
+        # Paso 4 — Notificación si hubo cambio
         if resultado["cambio"]:
             correo = construir_correo_alerta(decision)
             envio = enviar_correo(destinatario, correo["asunto"], correo["html"])
@@ -71,7 +90,7 @@ def ciclo_monitoreo():
             EstadoMonitoreo.objects.create(
                 decision=decision,
                 estado=EstadoMonitoreo.ESTADO_OK,
-                detalle="Alerta enviada correctamente." if envio["exito"] else f"Correo falló: {envio['error']}",
+                detalle="Alerta enviada." if envio["exito"] else f"Correo falló: {envio['error']}",
             )
         else:
             EstadoMonitoreo.objects.create(

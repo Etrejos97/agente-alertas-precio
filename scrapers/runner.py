@@ -1,0 +1,72 @@
+"""
+Orquesta la ejecución de todos los scrapers para un producto
+y guarda los ResultadoEncontrado en la base de datos.
+"""
+
+import logging
+from scrapers import ExitoScraper, OlimpicaScraper, CarullaScraper
+from pricing.models import ConsultaPrecio, ResultadoEncontrado
+
+logger = logging.getLogger(__name__)
+
+SCRAPERS_DISPONIBLES = {
+    "exito": ExitoScraper,
+    "olimpica": OlimpicaScraper,
+    "carulla": CarullaScraper,
+}
+
+
+def ejecutar_scraping_producto(producto) -> None:
+    """
+    Ejecuta el scraping en todas las tiendas configuradas para el producto
+    y guarda los resultados en ResultadoEncontrado.
+    """
+    palabras_clave = list(
+        producto.palabras_clave.values("palabra", "es_obligatoria")
+    )
+
+    if not palabras_clave:
+        logger.warning("El producto '%s' no tiene palabras clave definidas.", producto.nombre)
+        return
+
+    from stores.models import Tienda
+    tiendas = Tienda.objects.all()
+
+    for tienda in tiendas:
+        nombre_tienda = tienda.nombre.lower()
+        scraper_clase = SCRAPERS_DISPONIBLES.get(nombre_tienda)
+
+        if scraper_clase is None:
+            logger.warning("No hay scraper registrado para '%s'.", nombre_tienda)
+            continue
+
+        consulta = ConsultaPrecio.objects.create(
+            producto=producto,
+            tienda=tienda,
+            estado="exitosa",
+        )
+
+        try:
+            scraper = scraper_clase(url_base=tienda.url_base)
+            resultados = scraper.buscar_producto(palabras_clave)
+
+            for r in resultados:
+                ResultadoEncontrado.objects.create(
+                    consulta=consulta,
+                    nombre_encontrado=r["nombre_encontrado"],
+                    precio_base=r["precio_base"],
+                    precio_efectivo=r["precio_efectivo"],
+                    medio_pago=r.get("medio_pago", ""),
+                    disponible=r.get("disponible", True),
+                    url_producto=r["url_producto"],
+                )
+
+            logger.info(
+                "%d resultados para '%s' en '%s'.",
+                len(resultados), producto.nombre, tienda.nombre,
+            )
+
+        except Exception as exc:
+            consulta.estado = "error"
+            consulta.save()
+            logger.error("Error en scraper '%s' para '%s': %s", nombre_tienda, producto.nombre, exc)

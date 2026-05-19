@@ -23,6 +23,7 @@ INSTALLED_APPS = [
     'stores',
     'scrapers',
     'pricing',
+    "notifications",
 ]
 
 MIDDLEWARE = [
@@ -86,4 +87,4 @@ CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers.DatabaseScheduler'
 
 # Brevo
 BREVO_API_KEY = config('BREVO_API_KEY')
-EMAIL_DESTINATARIO = config('EMAIL_DESTINATARIO')
+ALERT_RECIPIENT_EMAIL = config('ALERT_RECIPIENT_EMAIL')

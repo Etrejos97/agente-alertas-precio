@@ -60,7 +60,9 @@ DATABASE_HOST=localhost
 DATABASE_PORT=5433
 CELERY_BROKER_URL=redis://localhost:6379/0
 BREVO_API_KEY=tu-api-key
-EMAIL_DESTINATARIO=tucorreo@gmail.com
+BREVO_SENDER_EMAIL=tucorreo@gmail.com
+BREVO_SENDER_NAME=Agente de Precios
+ALERT_RECIPIENT_EMAIL=tucorreo@gmail.com
 ```
 
 **5. Crear la base de datos en PostgreSQL**
@@ -110,6 +112,13 @@ celery -A config beat --loglevel=info --scheduler django_celery_beat.schedulers:
 
 Panel de administración: http://127.0.0.1:8000/admin
 
+## Comandos útiles
+
+```bash
+# Enviar correo resumen con el estado actual de todos los precios (demostración manual)
+python manage.py enviar_resumen
+```
+
 ## Estructura del proyecto
 
 ```
@@ -119,7 +128,7 @@ agente-alertas-precio/
 ├── stores/          → Modelo Tienda
 ├── scrapers/        → BaseScraper y scrapers por tienda (Carulla, Éxito, Olímpica)
 ├── pricing/         → Motor de comparación y decisión de mejor precio
-├── monitoring/      → Tarea periódica ciclo_monitoreo (Celery)
+├── monitoring/      → Tarea periódica ciclo_monitoreo (Celery) y comando enviar_resumen
 ├── notifications/   → Envío de alertas por correo (Brevo)
 ├── start_all.bat    → Levanta Django + Worker + Beat automáticamente
 ├── stop_all.bat     → Detiene todos los procesos

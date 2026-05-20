@@ -19,7 +19,7 @@ con la justificación de la decisión.
 | Base de datos | PostgreSQL 17 |
 | Tareas periódicas | Celery + django-celery-beat |
 | Cola de mensajes | Redis (Memurai en Windows) |
-| Scraping | BeautifulSoup + Requests |
+| Scraping | BeautifulSoup + Requests + Playwright |
 | Correo | Brevo API |
 | Variables de entorno | python-decouple |
 
@@ -82,21 +82,47 @@ python manage.py migrate
 python manage.py createsuperuser
 ```
 
-**8. Levantar el servidor**
+## Levantar el proyecto
+
+### Opción 1 — Script automático (recomendado en Windows)
+
+Ejecuta `start_all.bat` desde la raíz del proyecto. Abre automáticamente tres ventanas:
+- Django en `http://127.0.0.1:8000`
+- Celery Worker
+- Celery Beat
+
+Para detener todo: ejecuta `stop_all.bat`.
+
+### Opción 2 — Manual (tres terminales separadas)
+
 ```bash
+# Terminal 1 — Django
 python manage.py runserver
+
+# Terminal 2 — Celery Worker
+celery -A config worker --loglevel=info --pool=solo --concurrency=1
+
+# Terminal 3 — Celery Beat
+celery -A config beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
 ```
+
+> **Nota:** En Windows es obligatorio usar `--pool=solo` para evitar errores de permisos con el pool `prefork` de Celery.
 
 Panel de administración: http://127.0.0.1:8000/admin
 
 ## Estructura del proyecto
 
 ```
-agente_precios/
-├── config/          → Configuración Django, Celery
+agente-alertas-precio/
+├── config/          → Configuración Django y Celery
 ├── products/        → Modelos Producto y PalabraClave
 ├── stores/          → Modelo Tienda
-├── scrapers/        → BaseScraper y scrapers por tienda
+├── scrapers/        → BaseScraper y scrapers por tienda (Carulla, Éxito, Olímpica)
+├── pricing/         → Motor de comparación y decisión de mejor precio
+├── monitoring/      → Tarea periódica ciclo_monitoreo (Celery)
+├── notifications/   → Envío de alertas por correo (Brevo)
+├── start_all.bat    → Levanta Django + Worker + Beat automáticamente
+├── stop_all.bat     → Detiene todos los procesos
 ├── .env             → Variables de entorno (no se sube)
 └── requirements.txt
 ```
@@ -104,7 +130,7 @@ agente_precios/
 ## Estado del desarrollo
 
 - [x] Fase 1 — Configuración y estructura base
-- [ ] Fase 2 — Scrapers por tienda
-- [ ] Fase 3 — Motor de precios y comparación
-- [ ] Fase 4 — Tarea periódica y notificaciones
-- [ ] Fase 5 — Integración y pruebas finales
+- [x] Fase 2 — Scrapers por tienda (Carulla, Éxito, Olímpica)
+- [x] Fase 3 — Motor de precios y comparación
+- [x] Fase 4 — Tarea periódica y notificaciones por correo
+- [x] Fase 5 — Integración, pruebas y automatización local

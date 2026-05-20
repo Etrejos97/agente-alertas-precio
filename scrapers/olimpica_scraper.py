@@ -1,5 +1,6 @@
 import logging
 import time
+import re
 import requests
 from .base_scraper import BaseScraper
 
@@ -25,15 +26,63 @@ PAGE_SIZE = 20
 MAX_PAGES = 5
 REQUEST_DELAY = 0.8
 
+VTEX_PAYMENT_METHODS = {
+    "1": "Boleto Bancário",
+    "2": "Visa",
+    "3": "Mastercard",
+    "4": "American Express",
+    "5": "Diners",
+    "6": "Elo",
+    "201": "Débito Visa",
+    "202": "Débito Mastercard",
+    "203": "PSE",
+    "500": "Gift Card",
+    "601": "Efecty",
+}
+
 
 class OlimpicaScraper(BaseScraper):
     def __init__(self, url_base: str = BASE_URL):
         super().__init__(url_base=url_base)
         self.session.headers.update(DEFAULT_HEADERS)
 
+    def _construir_query_busqueda(self, palabras_clave: list) -> str:
+        obligatorias = [
+            p["palabra"].strip()
+            for p in palabras_clave
+            if p.get("es_obligatoria")
+        ]
+
+        if obligatorias:
+            obligatorias_filtradas = [
+                palabra
+                for palabra in obligatorias
+                if not re.search(r"\b\d+\s*(ml|l|lt|g|gr|kg)\b", palabra.lower())
+            ]
+
+            if obligatorias_filtradas:
+                return " ".join(obligatorias_filtradas)
+
+            return " ".join(obligatorias)
+
+        return " ".join([p["palabra"] for p in palabras_clave])
+
+    def _debe_excluir_resultado(self, nombre_encontrado: str, palabras_clave: list) -> bool:
+        nombre_norm = self._normalizar(nombre_encontrado)
+        obligatorias = {
+            self._normalizar(p["palabra"])
+            for p in palabras_clave
+            if p.get("es_obligatoria")
+        }
+
+        if {"arroz", "diana", "premium", "1 kg"}.issubset(obligatorias):
+            if "coco" in nombre_norm:
+                return True
+
+        return False
+
     def buscar_producto(self, palabras_clave: list) -> list:
-        palabras = [p["palabra"] for p in palabras_clave]
-        query = " ".join(palabras)
+        query = self._construir_query_busqueda(palabras_clave)
         resultados = []
 
         for page in range(1, MAX_PAGES + 1):
@@ -71,6 +120,9 @@ class OlimpicaScraper(BaseScraper):
                 if not self.coincide_con_palabras_clave(resultado["nombre_encontrado"], palabras_clave):
                     continue
 
+                if self._debe_excluir_resultado(resultado["nombre_encontrado"], palabras_clave):
+                    continue
+
                 resultados.append(resultado)
 
             if len(productos) < PAGE_SIZE:
@@ -103,6 +155,9 @@ class OlimpicaScraper(BaseScraper):
             if not nombre or not url_producto:
                 return None
 
+            if precio_efectivo <= 0:
+                return None
+
             return {
                 "nombre_encontrado": nombre,
                 "precio_base": precio_base,
@@ -113,7 +168,11 @@ class OlimpicaScraper(BaseScraper):
             }
 
         except (KeyError, IndexError, TypeError, ValueError) as exc:
-            logger.warning("[OlimpicaScraper] Error parseando producto '%s': %s", producto.get("productName", "desconocido"), exc)
+            logger.warning(
+                "[OlimpicaScraper] Error parseando producto '%s': %s",
+                producto.get("productName", "desconocido"),
+                exc
+            )
             return None
 
     @staticmethod
@@ -121,9 +180,20 @@ class OlimpicaScraper(BaseScraper):
         teasers = oferta.get("teasers", [])
         if not teasers:
             return "Cualquier medio"
-        nombres_teaser = []
+
+        medios = []
         for teaser in teasers:
-            nombre = teaser.get("name", "").strip()
-            if nombre:
-                nombres_teaser.append(nombre)
-        return " | ".join(nombres_teaser) if nombres_teaser else "Cualquier medio"
+            condiciones = teaser.get("conditions", {})
+            parametros = condiciones.get("parameters", [])
+            for param in parametros:
+                nombre_param = param.get("name", "").lower()
+                valor = param.get("value", "").strip()
+                if nombre_param in ("paymentmethodid", "paymentmethod") and valor:
+                    ids = [v.strip() for v in valor.split(",")]
+                    nombres = [
+                        VTEX_PAYMENT_METHODS.get(id_, f"Medio {id_}")
+                        for id_ in ids
+                    ]
+                    medios.extend(nombres)
+
+        return ", ".join(medios) if medios else "Cualquier medio"

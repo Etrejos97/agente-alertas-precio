@@ -8,14 +8,17 @@ import unicodedata
 from scrapers import ExitoScraper, OlimpicaScraper, CarullaScraper
 from pricing.models import ConsultaPrecio, ResultadoEncontrado
 
+
 def normalizar(texto: str) -> str:
     """Convierte a minúsculas y elimina tildes para comparación."""
     return ''.join(
         c for c in unicodedata.normalize('NFD', texto.lower())
         if unicodedata.category(c) != 'Mn'
     )
-    
+
+
 logger = logging.getLogger(__name__)
+
 
 SCRAPERS_DISPONIBLES = {
     "exito": ExitoScraper,
@@ -28,6 +31,9 @@ def ejecutar_scraping_producto(producto) -> None:
     """
     Ejecuta el scraping en todas las tiendas configuradas para el producto
     y guarda los resultados en ResultadoEncontrado.
+    Cada scraper filtra internamente por palabras clave, incluyendo
+    normalización de unidades (ej: 1L ↔ 1000 ml), por lo que el runner
+    no re-filtra para evitar descartar resultados válidos.
     """
     palabras_clave = list(
         producto.palabras_clave.values("palabra", "es_obligatoria")
@@ -57,6 +63,14 @@ def ejecutar_scraping_producto(producto) -> None:
         try:
             scraper = scraper_clase()
             resultados = scraper.buscar_producto(palabras_clave)
+
+            # Deduplicar: quedarse con el de menor precio_efectivo por nombre
+            vistos = {}
+            for r in resultados:
+                nombre = r["nombre_encontrado"].lower().strip()
+                if nombre not in vistos or r["precio_efectivo"] < vistos[nombre]["precio_efectivo"]:
+                    vistos[nombre] = r
+            resultados = list(vistos.values())
 
             for r in resultados:
                 ResultadoEncontrado.objects.create(

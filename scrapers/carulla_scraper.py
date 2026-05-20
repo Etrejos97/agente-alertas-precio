@@ -52,6 +52,17 @@ class CarullaScraper(BaseScraper):
             return ""
         return re.sub(r"\s+", " ", texto).strip()
 
+    def _construir_termino_busqueda(self, palabras_clave: list) -> str:
+        obligatorias = [
+            p["palabra"]
+            for p in palabras_clave
+            if p.get("es_obligatoria")
+        ]
+        if obligatorias:
+            return " ".join(obligatorias)
+
+        return " ".join([p["palabra"] for p in palabras_clave])
+
     def _construir_url_producto(self, product: dict) -> str:
         link = product.get("link") or ""
         if link:
@@ -78,7 +89,7 @@ class CarullaScraper(BaseScraper):
             nombre = self._limpiar_texto(inst.get("PaymentSystemName") or "")
             if nombre and nombre not in vistos:
                 vistos.append(nombre)
-        return ", ".join(vistos)
+        return ", ".join(vistos)[:95]
 
     def _extraer_precios_y_disponibilidad(self, items: list) -> tuple[float, float, bool, str]:
         precio_base = 0.0
@@ -136,7 +147,7 @@ class CarullaScraper(BaseScraper):
         if not palabras_clave:
             return []
 
-        termino = " ".join([p["palabra"] for p in palabras_clave])
+        termino = self._construir_termino_busqueda(palabras_clave)
         resultados = []
         ids_procesados = set()
 

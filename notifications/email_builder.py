@@ -1,10 +1,20 @@
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+ZONA_COLOMBIA = timezone(timedelta(hours=-5))
+
+
+def _resaltar_tiendas(justificacion: str) -> str:
+    """Envuelve en <strong> los nombres de tiendas conocidas."""
+    for tienda in ["Olímpica", "Éxito", "Carulla"]:
+        justificacion = justificacion.replace(tienda, f"<strong>{tienda}</strong>")
+    return justificacion
+
 
 def construir_correo_alerta(decision) -> dict:
     ganador = decision.resultado_ganador
     producto = decision.producto
     tienda = ganador.consulta.tienda
-    fecha = decision.fecha_hora.strftime("%d/%m/%Y a las %I:%M %p")
+    fecha = decision.fecha_hora.astimezone(ZONA_COLOMBIA).strftime("%d/%m/%Y a las %I:%M %p")
 
     precio_base = f"${ganador.precio_base:,.0f}".replace(",", ".")
     precio_efectivo = f"${ganador.precio_efectivo:,.0f}".replace(",", ".")
@@ -49,7 +59,7 @@ def construir_correo_alerta(decision) -> dict:
         </table>
         <h3 style="margin-top:24px;">📊 Justificación</h3>
         <p style="background:#f9f9f9; padding:12px; border-left: 4px solid #1a7a2e;">
-            {decision.justificacion}
+            {_resaltar_tiendas(decision.justificacion)}
         </p>
         <p style="color:#999; font-size:0.85em; margin-top:32px;">
             Consultado el {fecha}<br>
@@ -62,8 +72,9 @@ def construir_correo_alerta(decision) -> dict:
 
 
 def construir_correo_resumen(decisiones: list) -> dict:
-    fecha = datetime.now().strftime("%d/%m/%Y a las %I:%M %p")
-    asunto = f"[Resumen de Precios] Estado actual — {datetime.now().strftime('%d/%m/%Y')}"
+    ahora_colombia = datetime.now(ZONA_COLOMBIA)
+    fecha = ahora_colombia.strftime("%d/%m/%Y a las %I:%M %p")
+    asunto = f"[Resumen de Precios] Estado actual — {ahora_colombia.strftime('%d/%m/%Y')}"
 
     filas = ""
     for decision in decisiones:

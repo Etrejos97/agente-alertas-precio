@@ -1,6 +1,8 @@
 import logging
 from celery import shared_task
 from decouple import config
+from django.utils import timezone
+from datetime import timedelta
 
 from products.models import Producto
 from pricing.models import ResultadoEncontrado
@@ -42,9 +44,14 @@ def ciclo_monitoreo():
             continue
 
         # Paso 2 — Decisión de mejor precio
+        # Solo se toman resultados del ciclo actual (últimos 10 minutos)
+        # para evitar mezclar con históricos de ejecuciones anteriores.
         try:
+            hace_poco = timezone.now() - timedelta(minutes=10)
+
             resultados = ResultadoEncontrado.objects.filter(
                 consulta__producto=producto,
+                consulta__fecha_hora__gte=hace_poco,
                 disponible=True,
             ).select_related("consulta__tienda")
 

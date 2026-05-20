@@ -15,7 +15,7 @@ class ExitoScraper(BaseScraper):
         super().__init__(url_base=self.BASE_URL)
 
     def _build_search_url(self, palabras_clave: list) -> str:
-        palabras = [p['palabra'] for p in palabras_clave]
+        palabras = [self._normalizar(p['palabra']) for p in palabras_clave]
         query = " ".join(palabras)
         params = {"q": query, "sort": "score_desc", "fuzzy": "0"}
         return f"{self.BASE_URL}/s?{urlencode(params, quote_via=quote_plus)}"

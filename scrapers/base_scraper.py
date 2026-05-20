@@ -1,8 +1,12 @@
+import re
 import requests
+import unicodedata
 from abc import ABC, abstractmethod
 import logging
 
+
 logger = logging.getLogger(__name__)
+
 
 HEADERS = {
     'User-Agent': (
@@ -11,6 +15,7 @@ HEADERS = {
         'Chrome/120.0.0.0 Safari/537.36'
     )
 }
+
 
 TIMEOUT = 10  # segundos
 
@@ -47,6 +52,77 @@ class BaseScraper(ABC):
         """
         pass
 
+    @staticmethod
+    def _normalizar(texto: str) -> str:
+        """Convierte a minúsculas, elimina tildes y normaliza espacios."""
+        texto = ''.join(
+            c for c in unicodedata.normalize('NFD', texto.lower())
+            if unicodedata.category(c) != 'Mn'
+        )
+        texto = re.sub(r'\s+', ' ', texto).strip()
+        return texto
+
+    @staticmethod
+    def _normalizar_unidades(texto: str) -> str:
+        """
+        Normaliza formatos de unidades para comparar mejor:
+        900ml -> 900 ml, 1000gr -> 1000 gr, 1l -> 1 l, etc.
+        """
+        texto = BaseScraper._normalizar(texto)
+
+        texto = re.sub(r'(\d)(ml|gr|g|kg|l|lt)\b', r'\1 \2', texto)
+        texto = re.sub(r'(\d)\s+(ml|gr|g|kg|l|lt)\b', r'\1 \2', texto)
+
+        texto = texto.replace("lts", "lt")
+        texto = texto.replace("litros", "litro")
+
+        texto = re.sub(r'\s+', ' ', texto).strip()
+        return texto
+
+    @staticmethod
+    def _generar_variantes_equivalentes(texto: str) -> set[str]:
+        """
+        Genera variantes equivalentes de presentación sin romper
+        la comparación literal ya existente.
+
+        Ejemplos:
+        - 900 ml -> {'900 ml'}
+        - 1000 ml -> {'1000 ml', '1 l', '1 lt'}
+        - 1 l -> {'1 l', '1 lt', '1000 ml'}
+        - 1000 g -> {'1000 g', '1 kg'}
+        - 1 kg -> {'1 kg', '1000 g'}
+        """
+        base = BaseScraper._normalizar_unidades(texto)
+        variantes = {base}
+
+        equivalencias = [
+            (r'\b1000 ml\b', ['1 l', '1 lt']),
+            (r'\b1 l\b', ['1000 ml', '1 lt']),
+            (r'\b1 lt\b', ['1000 ml', '1 l']),
+            (r'\b1000 g\b', ['1 kg']),
+            (r'\b1 kg\b', ['1000 g']),
+        ]
+
+        pendientes = {base}
+        procesadas = set()
+
+        while pendientes:
+            actual = pendientes.pop()
+            if actual in procesadas:
+                continue
+            procesadas.add(actual)
+
+            for patron, reemplazos in equivalencias:
+                if re.search(patron, actual):
+                    for reemplazo in reemplazos:
+                        nuevo = re.sub(patron, reemplazo, actual)
+                        nuevo = BaseScraper._normalizar_unidades(nuevo)
+                        if nuevo not in variantes:
+                            variantes.add(nuevo)
+                            pendientes.add(nuevo)
+
+        return variantes
+
     def esta_disponible(self, texto_pagina: str) -> bool:
         """
         Verifica si un producto está disponible revisando
@@ -67,14 +143,24 @@ class BaseScraper(ABC):
         con las palabras clave del producto.
 
         Regla RN01: todas las palabras obligatorias deben aparecer.
+        Normaliza tildes, espacios y formatos de unidades, y además
+        acepta equivalencias controladas como 1000 ml = 1 l,
+        1000 g = 1 kg.
         """
-        nombre_lower = nombre_encontrado.lower()
+        nombre_norm = self._normalizar_unidades(nombre_encontrado)
+
         obligatorias = [
-            p['palabra'].lower()
+            p['palabra']
             for p in palabras_clave
             if p['es_obligatoria']
         ]
-        return all(palabra in nombre_lower for palabra in obligatorias)
+
+        for palabra in obligatorias:
+            variantes = self._generar_variantes_equivalentes(palabra)
+            if not any(variante in nombre_norm for variante in variantes):
+                return False
+
+        return True
 
     def get_pagina(self, url: str) -> requests.Response | None:
         """
